@@ -1,3 +1,59 @@
+// Track posts being processed to prevent duplicates
+const processingPosts = new Set();
+
+// Poll for completion status
+function pollForCompletion(postUrl, button) {
+    const maxAttempts = 120; // Poll for up to 2 minutes (120 * 1 second)
+    let attempts = 0;
+    
+    const checkStatus = () => {
+        if (attempts >= maxAttempts) {
+            console.log('Polling timed out for:', postUrl);
+            return;
+        }
+        
+        attempts++;
+        
+        // Use chrome.runtime.sendMessage to check status via background script
+        chrome.runtime.sendMessage({
+            type: 'CHECK_STATUS',
+            url: postUrl
+        }, (response) => {
+            if (!response || !response.success) {
+                // Server might be down, stop polling
+                console.error('Failed to check status:', response?.error);
+                return;
+            }
+            
+            const status = response.data?.status;
+            
+            if (status === 'completed') {
+                button.innerHTML = '✅ Shared!';
+                button.style.background = '#10b981';
+                processingPosts.delete(postUrl);
+            } else if (status === 'failed') {
+                button.innerHTML = '❌ Failed';
+                button.style.background = '#ef4444';
+                processingPosts.delete(postUrl);
+                button.disabled = false;
+                setTimeout(() => {
+                    button.innerHTML = '📤 Share to X';
+                    button.style.background = '';
+                }, 5000);
+            } else if (status === 'processing') {
+                // Still processing, check again
+                setTimeout(checkStatus, 1000);
+            } else {
+                // Unknown status, stop polling
+                console.log('Unknown status:', status);
+            }
+        });
+    };
+    
+    // Start polling after 2 seconds
+    setTimeout(checkStatus, 2000);
+}
+
 // Add "Share to X" button to Reddit posts
 function addShareButton(postElement) {
     // Check if button already exists
@@ -45,46 +101,54 @@ function addShareButton(postElement) {
         e.stopPropagation();
         e.stopImmediatePropagation();
         
+        // Prevent duplicate submissions
+        if (processingPosts.has(postUrl)) {
+            console.log('Post already being processed:', postUrl);
+            return;
+        }
+        
         button.innerHTML = '⏳ Sending...';
         button.disabled = true;
+        processingPosts.add(postUrl);
         
         try {
-            const response = await fetch('http://127.0.0.1:8765/share', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: postUrl })
+            // Use chrome.runtime.sendMessage to communicate with background script
+            // This is required in Manifest V3 for localhost requests
+            const response = await chrome.runtime.sendMessage({
+                type: 'SHARE_TO_X',
+                url: postUrl
             });
             
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                button.innerHTML = '✅ Queued!';
-                button.style.background = '#10b981';
-                setTimeout(() => {
-                    button.innerHTML = '📤 Share to X';
-                    button.style.background = '';
-                    button.disabled = false;
-                }, 3000);
+            if (response && response.success && response.data.status === 'success') {
+                button.innerHTML = '📥 Processing...';
+                button.style.background = '#3b82f6';
+                button.style.cursor = 'not-allowed';
+                
+                // Poll for completion status
+                pollForCompletion(postUrl, button);
             } else {
-                throw new Error(data.message);
+                throw new Error(response?.data?.message || response?.error || 'Unknown error');
             }
         } catch (error) {
+            // Only remove from processing set on error
+            processingPosts.delete(postUrl);
+            
             button.innerHTML = '❌ Failed';
             button.style.background = '#ef4444';
             console.error('Share to X error:', error);
-            console.error('Error details:', error.message, error.stack);
             
-            // Check if server is running
-            if (error.message && error.message.includes('Failed to fetch')) {
+            // Check for connection errors
+            if (error.message && error.message.includes('Extension context invalidated')) {
+                alert('⚠️ Extension reloaded!\n\nPlease refresh this Reddit page.');
+            } else if (error.message && error.message.includes('message port closed')) {
+                alert('⚠️ Extension connection lost!\n\nPlease refresh this Reddit page.');
+            } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('fetch'))){
                 alert('⚠️ Automation server not running!\n\nPlease start: python XportReddit.py');
-            } else if (error.message) {
+            } else if (!chrome.runtime?.id) {
+                alert('⚠️ Extension disconnected!\n\nPlease refresh this Reddit page.');
+            } else {
                 console.error('Server error:', error.message);
                 alert(`⚠️ Error: ${error.message}`);
-            } else {
-                console.error('Unknown error occurred');
-                alert('⚠️ Unknown error occurred. Check console for details.');
             }
             
             setTimeout(() => {
