@@ -324,30 +324,46 @@ def check_if_post_published(driver, post_title, timeout=5):
         bool: True if post appears to be published
     """
     try:
-        # Filter title for comparison (same as what we posted)
-        filtered_title = ''.join(char for char in post_title if ord(char) <= 0xFFFF)
-        
-        # Look for the posted title in the page
-        # Check first 50 characters to avoid issues with long titles
-        search_text = filtered_title[:50]
+        # Primary check: Is compose modal closed?
+        # This is more reliable than text search
+        start_time = time.time()
+        modal_closed = False
+        url_changed = False
+        initial_url = driver.current_url
         
         end_time = time.time() + timeout
         while time.time() < end_time:
-            # Check page source for the title text
-            page_source = driver.page_source
-            if search_text in page_source:
-                # Double check it's not in the compose modal
-                try:
-                    compose_modal = driver.find_element(By.CSS_SELECTOR, '[aria-labelledby="modal-header"]')
-                    if compose_modal.is_displayed():
-                        # Modal still open, post didn't go through
-                        return False
-                except:
-                    # No modal found, post likely published
-                    return True
-            time.sleep(0.5)
+            # Check if compose modal is closed
+            try:
+                compose_modal = driver.find_element(By.CSS_SELECTOR, '[aria-labelledby="modal-header"]')
+                if not compose_modal.is_displayed():
+                    modal_closed = True
+            except:
+                # Modal not found = closed
+                modal_closed = True
+            
+            # Check if URL changed (navigated to post page)
+            if driver.current_url != initial_url and 'status' in driver.current_url:
+                url_changed = True
+            
+            # If modal closed, verify with title check (but only after modal is gone)
+            if modal_closed:
+                # Filter title for comparison (same as what we posted)
+                filtered_title = ''.join(char for char in post_title if ord(char) <= 0xFFFF)
+                search_text = filtered_title[:50]
+                
+                page_source = driver.page_source
+                # Look for the title OUTSIDE the compose textarea
+                # Check it appears in the timeline/feed area
+                if search_text in page_source or url_changed:
+                    # Wait a bit to ensure it's stable
+                    if time.time() - start_time > 2:
+                        return True
+            
+            human_delay(0.5, variance=0.4)
         
-        return False
+        # If modal closed even without text match, likely posted
+        return modal_closed
     except Exception as e:
         print(f"  ⚠️  Could not verify post publication: {e}")
         return False
@@ -370,6 +386,27 @@ def check_for_x_error(driver):
                 # Check specifically for rate limit
                 if 'limit' in msg.lower():
                     print(f"  ⚠️  RATE LIMIT detected! X may be temporarily blocking posts.")
+                return True
+        return False
+    except:
+        return False
+
+def check_for_duplicate_post(driver):
+    """Check if X is showing 'Already said that' duplicate error.
+    
+    Returns:
+        bool: True if duplicate post error detected
+    """
+    try:
+        duplicate_messages = [
+            "Already said that",
+            "You already said that",
+            "already posted"
+        ]
+        
+        for msg in duplicate_messages:
+            elements = driver.find_elements(By.XPATH, f"//*[contains(text(), '{msg}')]")
+            if elements:
                 return True
         return False
     except:
@@ -553,14 +590,14 @@ def prompt_user_for_post_action(post_title):
         post_title: The title of the post
         
     Returns:
-        tuple: (action, custom_title) where action is 'y'/'r'/'n'/'s'/'q' and custom_title is the new title if action is 'n'
+        tuple: (action, custom_title) where action is 'y'/'r'/'n'/'s'/'q' and custom_title is the new title if action is 'n' or 'r'
     """
     print(f"\n{'='*60}")
     print(f"📄 Post: {post_title}")
     print(f"{'='*60}")
     print("Options:")
     print("  y = Post with original title")
-    print("  r = Reword title (AI-assisted)")
+    print("  r = Reword title (edit original)")
     print("  n = Enter new title")
     print("  s = Skip this post")
     print("  q = Quit")
@@ -568,8 +605,27 @@ def prompt_user_for_post_action(post_title):
     while True:
         choice = input("\nYour choice [y/r/n/s/q]: ").lower().strip()
         
-        if choice in ['y', 'r', 's', 'q']:
+        if choice in ['y', 's', 'q']:
             return choice, None
+        elif choice == 'r':
+            # Pre-fill with original title for editing
+            try:
+                import readline
+                def prefill_input():
+                    readline.insert_text(post_title)
+                    readline.redisplay()
+                readline.set_pre_input_hook(prefill_input)
+                custom_title = input("Edit title: ").strip()
+                readline.set_pre_input_hook()  # Clear the hook
+            except (ImportError, AttributeError):
+                # Fallback for systems without readline
+                print(f"\nOriginal: {post_title}")
+                custom_title = input("Reword title: ").strip()
+            
+            if custom_title:
+                return 'r', custom_title
+            else:
+                print("⚠️  Title cannot be empty. Try again.")
         elif choice == 'n':
             custom_title = input("Enter new title: ").strip()
             if custom_title:
@@ -756,12 +812,9 @@ if __name__ == "__main__":
             
             # Determine the title to use
             post_title = original_title
-            if action == 'n' and custom_title:
+            if action in ['n', 'r'] and custom_title:
                 post_title = custom_title
                 print(f"✏️  Using custom title: {post_title}")
-            elif action == 'r':
-                print("\n✏️  Reword mode - Manual posting workflow")
-                print("   Opening compose with images, you can edit the text yourself\n")
             
             try:
                 print(f"\n📥 Fetching media from Reddit...", flush=True)
@@ -815,8 +868,8 @@ if __name__ == "__main__":
                     print(f"Tweet {i+1}/{len(batches)} - Images: {batch_nums[0]}-{batch_nums[-1]} ({len(batch)} files)")
                     print(f"{'='*60}")
                     
-                    # Add tweet text for first tweet only (skip for reword mode)
-                    if i == 0 and action != 'r':
+                    # Add tweet text for first tweet only
+                    if i == 0:
                         try:
                             # Ensure we're on the correct tab
                             ensure_x_tab_active(driver)
@@ -855,32 +908,6 @@ if __name__ == "__main__":
                             print("  ⚠️  Failed to add tweet to thread.")
                             break
                 
-                # Handle reword mode - skip auto-posting
-                if action == 'r':
-                    print("\n" + "="*60)
-                    print("✏️  REWORD MODE - Manual Posting")
-                    print("="*60)
-                    print(f"  📝 Images uploaded to compose modal")
-                    print(f"  💡 Original title: {original_title}")
-                    print(f"\n  ✏️  Edit the text in the compose window and post when ready")
-                    input("\n  ⏸️  Press Enter after you've posted...")
-                    
-                    # Archive as manually posted
-                    print("\n  ✅ Marked as posted!")
-                    add_to_posted_urls(reddit_url, status='manual')
-                    reddit_urls.remove(reddit_url)
-                    save_saved_posts(reddit_urls)
-                    posts_processed += 1
-                    
-                    # Clear temp directory
-                    for filename in os.listdir(tmpdir):
-                        file_path = os.path.join(tmpdir, filename)
-                        if os.path.isfile(file_path):
-                            os.remove(file_path)
-                    
-                    print("\n✅ Ready for next post!\n")
-                    continue
-                
                 # Post the entire thread at once
                 print("\n" + "="*60)
                 print("📤 Posting entire thread...")
@@ -889,11 +916,6 @@ if __name__ == "__main__":
                 # Final wait to ensure everything is stable
                 print("  ⏳ Final stability check before posting...")
                 human_delay(2.0, variance=0.4)
-                
-                # Check for any X errors before posting
-                if check_for_x_error(driver):
-                    print("  ⚠️  X is showing an error. Waiting and retrying...")
-                    human_delay(5.0, variance=0.5)
                 
                 # Try to post with retries and exponential backoff
                 posted = False
@@ -914,6 +936,25 @@ if __name__ == "__main__":
                     if click_post_button_selenium(driver):
                         human_delay(3.0, variance=0.3)  # Wait for post to process
                         
+                        # Check for duplicate post error first
+                        if check_for_duplicate_post(driver):
+                            print("  ⚠️  X says 'Already said that' - duplicate content detected")
+                            print("  🚫 Closing composer and skipping to next post...")
+                            # Close the composer
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                                human_delay(1.0, variance=0.3)
+                            except:
+                                pass
+                            # Mark as skipped and break out of retry loop
+                            posts_failed += 1
+                            add_to_posted_urls(reddit_url, status='skipped')
+                            reddit_urls.remove(reddit_url)
+                            save_saved_posts(reddit_urls)
+                            posted = None  # Signal to skip further processing
+                            break
+                        
                         # Check if post was published successfully
                         print(f"  🔍 Verifying post publication...")
                         if check_if_post_published(driver, post_title, timeout=5):
@@ -928,6 +969,11 @@ if __name__ == "__main__":
                         
                         # If no error but not verified, might need more time
                         print("  ⚠️  Post not verified yet, will retry...")
+                
+                # Skip to next post if duplicate detected
+                if posted is None:
+                    print("\n⏭️  Skipped duplicate post\n")
+                    continue
                 
                 if not posted:
                     print(f"  ⚠️  Failed to auto-post thread after {POST_RETRY_ATTEMPTS} attempts.", flush=True)
