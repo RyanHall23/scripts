@@ -68,7 +68,7 @@ def human_delay(base_seconds, variance=0.3):
     delay = random.uniform(min_delay, max_delay)
     time.sleep(delay)
 
-def human_type(element, text, min_delay=0.05, max_delay=0.15):
+def human_type(element, text, min_delay=0.05, max_delay=0.15, with_typos=False):
     """Type text character-by-character with human-like delays.
     
     Args:
@@ -76,11 +76,57 @@ def human_type(element, text, min_delay=0.05, max_delay=0.15):
         text: Text to type
         min_delay: Minimum delay between characters (seconds)
         max_delay: Maximum delay between characters (seconds)
+        with_typos: Whether to simulate occasional typos and corrections
     """
-    for char in text:
-        element.send_keys(char)
-        time.sleep(random.uniform(min_delay, max_delay))
-    # Occasional longer pause after typing (like thinking)
+    # Common typo patterns (nearby keys)
+    typo_map = {
+        'a': ['s', 'q', 'w'], 'b': ['v', 'n', 'g'], 'c': ['x', 'v', 'd'],
+        'd': ['s', 'f', 'e'], 'e': ['w', 'r', 'd'], 'f': ['d', 'g', 'r'],
+        'g': ['f', 'h', 't'], 'h': ['g', 'j', 'y'], 'i': ['u', 'o', 'k'],
+        'j': ['h', 'k', 'u'], 'k': ['j', 'l', 'i'], 'l': ['k', 'o', 'p'],
+        'm': ['n', 'j', 'k'], 'n': ['b', 'm', 'h'], 'o': ['i', 'p', 'l'],
+        'p': ['o', 'l'], 'q': ['w', 'a'], 'r': ['e', 't', 'f'],
+        's': ['a', 'd', 'w'], 't': ['r', 'y', 'g'], 'u': ['y', 'i', 'j'],
+        'v': ['c', 'b', 'f'], 'w': ['q', 'e', 's'], 'x': ['z', 'c', 's'],
+        'y': ['t', 'u', 'h'], 'z': ['x', 'a']
+    }
+    
+    i = 0
+    while i < len(text):
+        char = text[i]
+        
+        # Simulate typo occasionally (5% chance for non-space characters)
+        if with_typos and char.lower() in typo_map and random.random() < 0.05:
+            # Type wrong character
+            wrong_char = random.choice(typo_map[char.lower()])
+            if char.isupper():
+                wrong_char = wrong_char.upper()
+            
+            element.send_keys(wrong_char)
+            time.sleep(random.uniform(min_delay, max_delay))
+            
+            # Brief pause (noticing the mistake)
+            time.sleep(random.uniform(0.1, 0.3))
+            
+            # Delete the wrong character
+            element.send_keys(Keys.BACKSPACE)
+            time.sleep(random.uniform(0.05, 0.1))
+            
+            # Type the correct character
+            element.send_keys(char)
+            time.sleep(random.uniform(min_delay, max_delay))
+        else:
+            # Type normally
+            element.send_keys(char)
+            time.sleep(random.uniform(min_delay, max_delay))
+        
+        # Occasional longer pause (like thinking or looking at source)
+        if random.random() < 0.15:  # 15% chance
+            time.sleep(random.uniform(0.2, 0.6))
+        
+        i += 1
+    
+    # Final pause after typing complete
     if random.random() < 0.3:  # 30% chance
         time.sleep(random.uniform(0.3, 0.8))
 
@@ -97,6 +143,61 @@ def move_to_element_naturally(driver, element):
         human_delay(0.2, variance=0.5)  # Small pause after moving
     except:
         pass  # If movement fails, continue anyway
+
+def visit_profile_and_scroll(driver):
+    """Visit profile page and scroll to simulate human browsing behavior.
+    
+    Args:
+        driver: WebDriver instance
+    """
+    try:
+        print("\n👤 [HUMAN BEHAVIOR] Visiting profile...")
+        
+        # Click profile link
+        profile_link = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="AppTabBar_Profile_Link"]'))
+        )
+        driver.execute_script("arguments[0].click();", profile_link)
+        human_delay(2.0, variance=0.5)
+        
+        # Scroll down the profile a few times
+        scroll_count = random.randint(3, 6)
+        print(f"   Scrolling profile {scroll_count} times...")
+        
+        for i in range(scroll_count):
+            # Scroll by a random amount
+            scroll_amount = random.randint(300, 700)
+            driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+            
+            # Random pause between scrolls (like reading)
+            human_delay(random.uniform(1.5, 3.5), variance=0.3)
+        
+        # Scroll back to top occasionally
+        if random.random() < 0.4:  # 40% chance
+            print("   Scrolling back to top...")
+            driver.execute_script("window.scrollTo(0, 0);")
+            human_delay(1.0, variance=0.4)
+        
+        # Return to home feed
+        print("   Returning to home feed...")
+        home_link = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="AppTabBar_Home_Link"]'))
+        )
+        driver.execute_script("arguments[0].click();", home_link)
+        human_delay(2.0, variance=0.5)
+        
+        print("✅ Profile visit complete\n")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️  Could not visit profile: {e}")
+        # Try to get back to home anyway
+        try:
+            driver.get("https://x.com/home")
+            human_delay(2.0, variance=0.3)
+        except:
+            pass
+        return False
 
 # ============================================================
 
@@ -583,29 +684,37 @@ def click_add_button_selenium(driver):
         print(f"  ⚠️  Failed to click add button: {e}")
         return False
 
-def prompt_user_for_post_action(post_title):
+def prompt_user_for_post_action(post_title, auto_mode=False):
     """Prompt user for action on a post.
     
     Args:
         post_title: The title of the post
+        auto_mode: If True, automatically accept posts without prompting
         
     Returns:
-        tuple: (action, custom_title) where action is 'y'/'r'/'n'/'s'/'q' and custom_title is the new title if action is 'n' or 'r'
+        tuple: (action, custom_title) where action is 'y'/'r'/'n'/'s'/'q'/'a' and custom_title is the new title if action is 'n' or 'r'
     """
+    if auto_mode:
+        print(f"\n{'='*60}")
+        print(f"📄 [AUTO] Post: {post_title}")
+        print(f"{'='*60}")
+        return 'y', None
+    
     print(f"\n{'='*60}")
     print(f"📄 Post: {post_title}")
     print(f"{'='*60}")
     print("Options:")
     print("  y = Post with original title")
+    print("  a = Auto-process remaining posts")
     print("  r = Reword title (edit original)")
     print("  n = Enter new title")
     print("  s = Skip this post")
     print("  q = Quit")
     
     while True:
-        choice = input("\nYour choice [y/r/n/s/q]: ").lower().strip()
+        choice = input("\nYour choice [y/a/r/n/s/q]: ").lower().strip()
         
-        if choice in ['y', 's', 'q']:
+        if choice in ['y', 'a', 's', 'q']:
             return choice, None
         elif choice == 'r':
             # Pre-fill with original title for editing
@@ -775,6 +884,9 @@ if __name__ == "__main__":
     posts_processed = 0
     posts_skipped = 0
     posts_failed = 0
+    auto_mode = False  # Toggle for auto-processing
+    posts_since_profile_visit = 0  # Track when to visit profile
+    next_profile_visit = random.randint(5, 10)  # Visit profile every 5-10 posts
     
     try:
         # Process each saved post
@@ -792,7 +904,15 @@ if __name__ == "__main__":
                 posts_failed += 1
                 continue
             
-            action, custom_title = prompt_user_for_post_action(original_title)
+            action, custom_title = prompt_user_for_post_action(original_title, auto_mode=auto_mode)
+            
+            if action == 'a':
+                print("\n🤖 AUTO MODE ENABLED")
+                print("   Posts will be processed automatically with human-like delays")
+                print("   Typing will include occasional typos and corrections")
+                print("   Press Ctrl+C to stop at any time\n")
+                auto_mode = True
+                action = 'y'  # Process this post
             
             if action == 'q':
                 print("\n👋 Quitting...")
@@ -889,8 +1009,8 @@ if __name__ == "__main__":
                             filtered_title = ''.join(char for char in post_title if ord(char) <= 0xFFFF)
                             
                             # Type with human-like delays between characters
-                            print(f"  ⌨️  Typing title...")
-                            human_type(text_area, filtered_title, min_delay=0.03, max_delay=0.12)
+                            print(f"  ⌨️  Typing title{'...' if not auto_mode else ' (with realistic typing)...'}")
+                            human_type(text_area, filtered_title, min_delay=0.03, max_delay=0.12, with_typos=auto_mode)
                             
                             print(f"  ✅ Added title: {filtered_title[:50]}{'...' if len(filtered_title) > 50 else ''}")
                             human_delay(1.5, variance=0.4)  # Let text register properly
@@ -1018,11 +1138,35 @@ if __name__ == "__main__":
 
                 print("✅ Done! Post processed successfully.\n", flush=True)
                 posts_processed += 1
+                posts_since_profile_visit += 1
                 
                 # Archive successful post and remove from pending list
                 add_to_posted_urls(reddit_url, status='success')
                 reddit_urls.remove(reddit_url)
                 save_saved_posts(reddit_urls)
+                
+                # Show progress
+                remaining = len(reddit_urls)
+                print(f"\n📊 Progress: {posts_processed} completed | {remaining} remaining")
+                
+                # Check if we should visit profile (human-like behavior)
+                if auto_mode and posts_since_profile_visit >= next_profile_visit:
+                    print(f"\n🤖 [AUTO MODE] Posted {posts_since_profile_visit} posts, simulating profile check...")
+                    if visit_profile_and_scroll(driver):
+                        posts_since_profile_visit = 0
+                        next_profile_visit = random.randint(5, 10)
+                        print(f"   Next profile visit in {next_profile_visit} posts\n")
+                
+                # Add delay between posts in auto mode (5-10 seconds per image)
+                if auto_mode and idx < len(reddit_urls):
+                    min_delay = len(image_urls) * 5
+                    max_delay = len(image_urls) * 10
+                    delay = random.uniform(min_delay, max_delay)
+                    remaining = len(reddit_urls)
+                    print(f"\n⏸️  [AUTO MODE] Waiting {delay:.0f}s before next post ({len(image_urls)} images × 5-10s)...")
+                    print(f"   Progress: {posts_processed} completed | {remaining} remaining")
+                    print("   (Press Ctrl+C to stop)\n")
+                    time.sleep(delay)
                 
             except Exception as e:
                 print(f"❌ Error processing post: {e}", flush=True)
