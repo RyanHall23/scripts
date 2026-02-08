@@ -884,15 +884,16 @@ if __name__ == "__main__":
     posts_processed = 0
     posts_skipped = 0
     posts_failed = 0
+    total_posts = len(reddit_urls)  # Capture original total before processing
     auto_mode = False  # Toggle for auto-processing
     posts_since_profile_visit = 0  # Track when to visit profile
     next_profile_visit = random.randint(5, 10)  # Visit profile every 5-10 posts
     
     try:
-        # Process each saved post
-        for idx, reddit_url in enumerate(reddit_urls, 1):
+        # Process each saved post (iterate over a copy to avoid issues when removing items)
+        for idx, reddit_url in enumerate(reddit_urls[:], 1):
             print(f"\n{'='*60}")
-            print(f"POST {idx}/{len(reddit_urls)}")
+            print(f"POST {idx}/{total_posts}")
             print(f"{'='*60}")
             
             # Fetch post title from Reddit
@@ -1192,7 +1193,7 @@ if __name__ == "__main__":
         print(f"✅ Posts processed: {posts_processed}")
         print(f"⏭️  Posts skipped: {posts_skipped}")
         print(f"❌ Posts failed: {posts_failed}")
-        print(f"📋 Total posts: {len(reddit_urls)}")
+        print(f"📋 Total posts: {total_posts}")
         print("="*60)
         
     except KeyboardInterrupt:
@@ -1203,7 +1204,7 @@ if __name__ == "__main__":
         print(f"✅ Posts processed: {posts_processed}")
         print(f"⏭️  Posts skipped: {posts_skipped}")
         print(f"❌ Posts failed: {posts_failed}")
-        print(f"📋 Total attempted: {posts_processed + posts_skipped + posts_failed}/{len(reddit_urls)}")
+        print(f"📋 Total attempted: {posts_processed + posts_skipped + posts_failed}/{total_posts}")
         print("="*60)
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")
