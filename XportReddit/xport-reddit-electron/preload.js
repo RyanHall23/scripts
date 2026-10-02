@@ -1,0 +1,25 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  loadPosts: () => ipcRenderer.invoke('session:init'),
+  getFileStatus: () => ipcRenderer.invoke('session:file-status'),
+  runPrimary: () => ipcRenderer.invoke('session:init-main'),
+  runSecondary: () => ipcRenderer.invoke('session:init-secondary'),
+  categorizeNewFile: () => ipcRenderer.invoke('session:init-new-file'),
+  clearAll: () => ipcRenderer.invoke('session:clear-all'),
+  pickFile: () => ipcRenderer.invoke('session:pick-file'),
+  loadFromPath: (filePath) => ipcRenderer.invoke('session:init-from-path', filePath),
+  getGroups: () => ipcRenderer.invoke('session:groups'),
+  categorize: (assignments) => ipcRenderer.invoke('session:categorize', assignments),
+  startBrowser: () => ipcRenderer.invoke('session:start-browser'),
+  confirmLogin: () => ipcRenderer.invoke('session:confirm-login'),
+  checkRedditLogin: () => ipcRenderer.invoke('session:check-reddit-login'),
+  confirmRedditLogin: () => ipcRenderer.invoke('session:confirm-reddit-login'),
+  peekNext: () => ipcRenderer.invoke('session:peek-next'),
+  postAction: (action, postTitle) => ipcRenderer.invoke('session:post-action', { action, postTitle }),
+  resolveManual: (status) => ipcRenderer.invoke('session:resolve-manual', status),
+  setAutoMode: (value) => ipcRenderer.invoke('session:set-auto-mode', value),
+  getCounts: () => ipcRenderer.invoke('session:counts'),
+  closeSession: () => ipcRenderer.invoke('session:close'),
+  onLog: (callback) => ipcRenderer.on('session:log', (_e, msg) => callback(msg)),
+});

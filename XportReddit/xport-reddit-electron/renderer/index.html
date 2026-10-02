@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>XportReddit — Reddit to X Thread Automation</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🚀 XportReddit</h1>
+    <p class="subtitle">Reddit → X Thread Automation</p>
+  </header>
+
+  <main>
+    <section id="load-section" class="panel">
+      <h2>Choose What to Run</h2>
+      <div id="file-status-loading" class="muted">🔍 Checking for batch files…</div>
+
+      <div id="run-choices" class="hidden">
+        <div class="choice-row">
+          <button id="run-primary-btn" class="choice-btn primary" disabled>
+            ▶ Run Primary
+            <span id="run-primary-detail" class="choice-detail"></span>
+          </button>
+          <button id="run-secondary-btn" class="choice-btn secondary" disabled>
+            ▶ Run Secondary
+            <span id="run-secondary-detail" class="choice-detail"></span>
+          </button>
+        </div>
+        <div class="choice-row">
+          <button id="categorize-new-btn" class="choice-btn" disabled>
+            📂 Categorize New File
+            <span id="categorize-new-detail" class="choice-detail"></span>
+          </button>
+          <button id="pick-file-btn" class="choice-btn">🗂️ Choose File…</button>
+        </div>
+        <div class="choice-row">
+          <button id="clear-all-btn" class="choice-btn danger hidden">🗑️ Clear All Completed Batches</button>
+        </div>
+      </div>
+
+      <p id="load-status" class="muted"></p>
+    </section>
+
+    <section id="error-section" class="panel hidden">
+      <p id="error-message" class="error"></p>
+    </section>
+
+    <section id="categorize-section" class="panel hidden">
+      <h2>Subreddit Categorization</h2>
+      <p class="muted">Check Primary to post now, Secondary to post later. Leave both unchecked to ignore.</p>
+      <div class="bulk-row">
+        <span>Set all remaining:</span>
+        <button data-bulk="main">✅ All → Primary</button>
+        <button data-bulk="secondary">✅ All → Secondary</button>
+        <button data-bulk="ignored">◻ All → Ignored</button>
+      </div>
+      <div class="group-header">
+        <span class="group-header-label">Subreddit</span>
+        <span class="group-header-col">Primary</span>
+        <span class="group-header-col">Secondary</span>
+      </div>
+      <div id="group-list"></div>
+      <button id="submit-categorization">✅ Submit Categorization</button>
+    </section>
+
+    <section id="login-section" class="panel hidden">
+      <p id="login-status">🌐 Starting browser…</p>
+      <button id="confirm-login-btn" class="hidden">✅ I'm logged in, continue</button>
+    </section>
+
+    <section id="reddit-login-section" class="panel hidden">
+      <p id="reddit-login-status">🔍 Checking Reddit login…</p>
+      <p class="muted">Tip: click "Continue with X" on Reddit's login page — no password needed since X is already signed in.</p>
+      <button id="confirm-reddit-login-btn" class="hidden">✅ I'm logged into Reddit, continue</button>
+    </section>
+
+    <section id="post-section" class="panel hidden">
+      <h2 id="post-progress"></h2>
+      <p id="post-title" class="post-title"></p>
+      <p id="post-url" class="muted"></p>
+
+      <div class="action-row">
+        <button id="action-post">✅ Post</button>
+        <button id="action-auto">🤖 Auto (post all)</button>
+        <button id="action-reword">✏️ Reword</button>
+        <button id="action-newtitle">📝 New Title</button>
+        <button id="action-skip">⏭️ Skip</button>
+        <button id="action-quit">🛑 Quit</button>
+      </div>
+
+      <div id="title-edit-row" class="hidden">
+        <input id="title-edit-input" type="text" />
+        <button id="title-edit-confirm">Use this title</button>
+        <button id="title-edit-cancel">Cancel</button>
+      </div>
+
+      <p id="post-busy" class="muted hidden">⏳ Working…</p>
+    </section>
+
+    <section id="manual-section" class="panel hidden">
+      <p>⚠️ Auto-post failed. The thread is ready in the embedded browser panel — you can post it manually.</p>
+      <div class="action-row">
+        <button id="manual-posted">✅ I posted it manually</button>
+        <button id="manual-skip">⏭️ Skip this post</button>
+        <button id="manual-quit">🛑 Quit</button>
+      </div>
+    </section>
+
+    <section id="summary-section" class="panel hidden">
+      <h2>📊 Summary</h2>
+      <p id="summary-text"></p>
+    </section>
+  </main>
+
+  <footer>
+    <div id="log-panel"></div>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
