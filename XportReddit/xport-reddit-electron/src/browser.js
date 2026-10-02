@@ -81,6 +81,26 @@ async function confirmRedditLogin(page) {
   return isRedditLoggedIn(page);
 }
 
+/**
+ * Logs out of X so the user can sign into a different account for this run
+ * (useful when Primary and Secondary batches post to different accounts).
+ * Leaves the embedded panel on the login page for the user to sign back in.
+ */
+async function switchAccount(page) {
+  await page.goto('https://x.com/logout', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await humanDelay(1.0, 0.3);
+  try {
+    const confirmBtn = page.locator('[data-testid="confirmationSheetConfirm"]');
+    if (await confirmBtn.count()) {
+      await confirmBtn.first().click();
+      await humanDelay(1.5, 0.3);
+    }
+  } catch {
+    /* logout confirmation UI may vary; user can finish manually */
+  }
+  await page.goto('https://x.com/login', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+}
+
 module.exports = {
-  startBrowser, isLoggedIn, confirmLogin, checkRedditLogin, confirmRedditLogin,
+  startBrowser, isLoggedIn, confirmLogin, checkRedditLogin, confirmRedditLogin, switchAccount,
 };

@@ -22,7 +22,7 @@ function show(id) { $(id).classList.remove('hidden'); }
 function hide(id) { $(id).classList.add('hidden'); }
 
 function showOnly(...ids) {
-  ['load-section', 'error-section', 'categorize-section', 'login-section', 'reddit-login-section', 'post-section', 'manual-section', 'summary-section']
+  ['load-section', 'error-section', 'categorize-section', 'account-switch-section', 'login-section', 'reddit-login-section', 'post-section', 'manual-section', 'summary-section']
     .forEach((id) => (ids.includes(id) ? show(id) : hide(id)));
 }
 
@@ -201,8 +201,36 @@ async function beginBrowserFlow() {
   appendLog('🌐 Starting embedded browser…');
 
   const { loggedIn } = await window.api.startBrowser();
+  await promptAccountSwitch(loggedIn);
+}
+
+// Different batches (Primary / Secondary) may post to different X accounts, so ask before every run.
+async function promptAccountSwitch(currentlyLoggedIn) {
+  showOnly('account-switch-section');
+  $('account-switch-status').textContent = currentlyLoggedIn
+    ? '✅ Currently logged into X in the embedded panel.'
+    : '⚠️ Not currently logged into X in the embedded panel.';
+}
+
+$('switch-account-yes').addEventListener('click', async () => {
+  $('switch-account-yes').disabled = true;
+  appendLog('🔄 Logging out of X — sign into the account you want for this run.');
+  await window.api.switchAccount();
+  $('switch-account-yes').disabled = false;
+  await proceedToLoginCheck();
+});
+
+$('switch-account-no').addEventListener('click', async () => {
+  await proceedToLoginCheck();
+});
+
+async function proceedToLoginCheck() {
+  showOnly('login-section');
+  $('login-status').textContent = '🔍 Checking X login…';
+  const { loggedIn } = await window.api.confirmLogin();
+
   if (loggedIn) {
-    appendLog('✅ X session active! Persistent login verified.');
+    appendLog('✅ X session active.');
     await beginRedditLoginFlow();
     return;
   }

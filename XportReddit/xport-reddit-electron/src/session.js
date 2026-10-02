@@ -1,12 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  DATA_DIR, TMP_DIR, POST_RETRY_ATTEMPTS,
+  DATA_DIR, OUTPUT_DIR, TMP_DIR, POST_RETRY_ATTEMPTS,
 } = require('./config');
 const store = require('./store');
 const { extractSubreddit, sortPostsOldestFirst } = require('./parsers');
 const { getRedditImagesViaBrowser, downloadImages, batchImagesForX } = require('./reddit');
-const { startBrowser: launchBrowser, confirmLogin, checkRedditLogin, confirmRedditLogin } = require('./browser');
+const {
+  startBrowser: launchBrowser, confirmLogin, checkRedditLogin, confirmRedditLogin, switchAccount,
+} = require('./browser');
 const {
   openXCompose, uploadImages, clickPostButton, clickAddButton,
   checkIfPostPublished, checkForXError, checkForDuplicatePost,
@@ -18,6 +20,7 @@ class Session {
     this.log = logFn || (() => {});
     this.browserView = browserView;
     this.dataDir = DATA_DIR;
+    this.outputDir = OUTPUT_DIR;
     this.titleCache = new Map();
     this.rowsCache = new Map();
     this.pendingUrls = [];
@@ -33,43 +36,43 @@ class Session {
 
   /** Load posts from the best available input file and determine routing. */
   init() {
-    return this._applyLoadResult(store.loadSavedPosts(this.dataDir));
+    return this._applyLoadResult(store.loadSavedPosts(this.dataDir, this.outputDir));
   }
 
   /** Load posts from a user-picked file path (csv / html / json, incl. raw *_main.json / *_secondary.json). */
   initFromPath(filePath) {
-    return this._applyLoadResult(store.loadFromPath(filePath, this.dataDir));
+    return this._applyLoadResult(store.loadFromPath(filePath, this.outputDir));
   }
 
   /** Report the newest Primary/Secondary batch files and any un-categorized raw export, for the load screen. */
   getFileStatus() {
-    return store.getFileStatus(this.dataDir);
+    return store.getFileStatus(this.dataDir, this.outputDir);
   }
 
   /** Load and run the newest Primary (*_main) batch directly, skipping categorization. */
   initMain() {
-    const status = store.getFileStatus(this.dataDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir);
     if (!status.main) return { ok: false, reason: 'no-input-file' };
-    return this._applyLoadResult(store.loadFromPath(status.main.filePath, this.dataDir));
+    return this._applyLoadResult(store.loadFromPath(status.main.filePath, this.outputDir));
   }
 
   /** Load and run the newest Secondary (*_secondary) batch directly, skipping categorization. */
   initSecondary() {
-    const status = store.getFileStatus(this.dataDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir);
     if (!status.secondary) return { ok: false, reason: 'no-input-file' };
-    return this._applyLoadResult(store.loadFromPath(status.secondary.filePath, this.dataDir));
+    return this._applyLoadResult(store.loadFromPath(status.secondary.filePath, this.outputDir));
   }
 
   /** Load the raw/un-categorized export file and force the categorization step. */
   initNewFile() {
-    const status = store.getFileStatus(this.dataDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir);
     if (!status.unparsed) return { ok: false, reason: 'no-input-file' };
-    return this._applyLoadResult(store.loadFromPath(status.unparsed.filePath, this.dataDir));
+    return this._applyLoadResult(store.loadFromPath(status.unparsed.filePath, this.outputDir));
   }
 
   /** Delete completed Primary/Secondary/Ignored batch files so a fresh export can be re-categorized. */
   clearAll() {
-    const deleted = store.clearBatches(this.dataDir);
+    const deleted = store.clearBatches(this.outputDir);
     this.pendingUrls = [];
     this.queue = [];
     this.totalPosts = 0;
@@ -158,7 +161,7 @@ class Session {
       categorized[cat] = sortPostsOldestFirst(categorized[cat]);
     }
 
-    const outDir = this.sourcePath ? path.dirname(this.sourcePath) : this.dataDir;
+    const outDir = this.outputDir;
     const writtenFiles = store.writeCategorizedCsvs(categorized, this.titleCache, this.rowsCache, outDir);
 
     this.queue = categorized.main;
@@ -188,6 +191,12 @@ class Session {
   async confirmLogin() {
     const loggedIn = await confirmLogin(this.page);
     return { loggedIn };
+  }
+
+  /** Log out of X so a different account can be signed in for this run. */
+  async switchAccount() {
+    await switchAccount(this.page);
+    return { ok: true };
   }
 
   /** Reddit's .json endpoint blocks logged-out requests, so check that separately from X. */
@@ -238,9 +247,9 @@ class Session {
 
   /** Remove the current head of the queue, persist, and archive its status. */
   _finishCurrent(url, status) {
-    store.addToPostedUrls(url, status, this.dataDir);
+    store.addToPostedUrls(url, status, this.outputDir);
     this.queue.shift();
-    store.saveSavedPosts(this.queue, this.dataDir);
+    store.saveSavedPosts(this.queue, this.outputDir);
   }
 
   /**

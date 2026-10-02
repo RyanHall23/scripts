@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   categorize: (assignments) => ipcRenderer.invoke('session:categorize', assignments),
   startBrowser: () => ipcRenderer.invoke('session:start-browser'),
   confirmLogin: () => ipcRenderer.invoke('session:confirm-login'),
+  switchAccount: () => ipcRenderer.invoke('session:switch-account'),
   checkRedditLogin: () => ipcRenderer.invoke('session:check-reddit-login'),
   confirmRedditLogin: () => ipcRenderer.invoke('session:confirm-reddit-login'),
   peekNext: () => ipcRenderer.invoke('session:peek-next'),

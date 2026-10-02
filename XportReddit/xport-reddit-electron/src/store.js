@@ -5,13 +5,16 @@ const { SAVED_POSTS_FILE, POSTED_URLS_FILE } = require('./config');
 const { extractUrlsFromHtml, parseCsvExport, sortPostsOldestFirst, extractSubreddit } = require('./parsers');
 
 /**
- * Search dataDir for a supported input file.
- * Priority: resumable progress JSON > dated *_main/_secondary batch files
- *           (.csv or .json, newest date first, csv preferred on a date tie)
- *           > saveddit4reddit.csv > reddit_export.html > progress JSON.
+ * Search for a supported input file.
+ * Priority: resumable progress JSON (outputDir) > dated *_main/_secondary
+ *           batch files (outputDir, .csv or .json, newest date first, csv
+ *           preferred on a date tie) > saveddit4reddit.csv (dataDir) >
+ *           reddit_export.html (dataDir).
+ * Generated files live in outputDir (git-ignored); raw exports live in
+ * dataDir (shared with the Python tooling).
  */
-function findInputFile(dataDir) {
-  const progressPath = path.join(dataDir, SAVED_POSTS_FILE);
+function findInputFile(dataDir, outputDir) {
+  const progressPath = path.join(outputDir, SAVED_POSTS_FILE);
   if (fs.existsSync(progressPath)) {
     try {
       const data = JSON.parse(fs.readFileSync(progressPath, 'utf-8'));
@@ -23,16 +26,15 @@ function findInputFile(dataDir) {
     }
   }
 
-  const entries = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+  const outputEntries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
   for (const suffix of ['_main', '_secondary']) {
-    const batchMatch = findNewestBatchFile(entries, suffix);
-    if (batchMatch) return { filePath: path.join(dataDir, batchMatch.name), fileType: batchMatch.fileType };
+    const batchMatch = findNewestBatchFile(outputEntries, suffix);
+    if (batchMatch) return { filePath: path.join(outputDir, batchMatch.name), fileType: batchMatch.fileType };
   }
 
   const candidates = [
     ['saveddit4reddit.csv', 'csv'],
     ['reddit_export.html', 'html'],
-    [SAVED_POSTS_FILE, 'json'],
   ];
   for (const [filename, ftype] of candidates) {
     const p = path.join(dataDir, filename);
@@ -72,17 +74,18 @@ function countUrlsInFile(filePath, fileType) {
 }
 
 /**
- * Report the newest Primary (*_main), Secondary (*_secondary), and an
- * un-categorized raw export file, so the UI can offer explicit "Run
- * Primary" / "Run Secondary" / "Categorize New File" actions.
+ * Report the newest Primary (*_main), Secondary (*_secondary) batch file in
+ * outputDir, and an un-categorized raw export file in dataDir, so the UI
+ * can offer explicit "Run Primary" / "Run Secondary" / "Categorize New
+ * File" actions.
  */
-function getFileStatus(dataDir) {
-  const entries = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+function getFileStatus(dataDir, outputDir) {
+  const outputEntries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
 
   const toInfo = (suffix) => {
-    const match = findNewestBatchFile(entries, suffix);
+    const match = findNewestBatchFile(outputEntries, suffix);
     if (!match) return null;
-    const filePath = path.join(dataDir, match.name);
+    const filePath = path.join(outputDir, match.name);
     return { filePath, fileName: match.name, fileType: match.fileType, count: countUrlsInFile(filePath, match.fileType) };
   };
 
@@ -98,25 +101,25 @@ function getFileStatus(dataDir) {
     }
   }
 
-  const hasAnyBatchFiles = Boolean(main || secondary) || entries.some((f) => /_ignored\.(csv|json)$/i.test(f));
+  const hasAnyBatchFiles = Boolean(main || secondary) || outputEntries.some((f) => /_ignored\.(csv|json)$/i.test(f));
 
   return { main, secondary, unparsed, hasAnyBatchFiles };
 }
 
-/** Delete all dated *_main/_secondary/_ignored batch files plus the progress snapshot, so a fresh export can be re-categorized. */
-function clearBatches(dataDir) {
-  const entries = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+/** Delete all dated *_main/_secondary/_ignored batch files plus the progress snapshot from outputDir, so a fresh export can be re-categorized. */
+function clearBatches(outputDir) {
+  const entries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
   const pattern = /_(main|secondary|ignored)\.(csv|json)$/i;
   const deleted = [];
 
   for (const f of entries) {
     if (pattern.test(f)) {
-      fs.unlinkSync(path.join(dataDir, f));
+      fs.unlinkSync(path.join(outputDir, f));
       deleted.push(f);
     }
   }
 
-  const progressPath = path.join(dataDir, SAVED_POSTS_FILE);
+  const progressPath = path.join(outputDir, SAVED_POSTS_FILE);
   if (fs.existsSync(progressPath)) {
     fs.unlinkSync(progressPath);
     deleted.push(SAVED_POSTS_FILE);
@@ -125,9 +128,10 @@ function clearBatches(dataDir) {
   return deleted;
 }
 
-/** Write current URL list to the progress JSON snapshot file. */
-function writeJsonSnapshot(urls, dataDir) {
-  const out = path.join(dataDir, SAVED_POSTS_FILE);
+/** Write current URL list to the progress JSON snapshot file in outputDir. */
+function writeJsonSnapshot(urls, outputDir) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const out = path.join(outputDir, SAVED_POSTS_FILE);
   const data = {
     indexed_at: new Date().toISOString(),
     sort_order: 'oldest_to_newest',
@@ -138,15 +142,17 @@ function writeJsonSnapshot(urls, dataDir) {
   return out;
 }
 
-/** Overwrite the JSON progress file with the current URL list. */
-function saveSavedPosts(urls, dataDir) {
-  const out = path.join(dataDir, SAVED_POSTS_FILE);
+/** Overwrite the JSON progress file in outputDir with the current URL list. */
+function saveSavedPosts(urls, outputDir) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const out = path.join(outputDir, SAVED_POSTS_FILE);
   fs.writeFileSync(out, JSON.stringify({ urls }, null, 2), 'utf-8');
 }
 
-/** Append a processed URL to the posted-URLs archive. */
-function addToPostedUrls(url, status, dataDir) {
-  const out = path.join(dataDir, POSTED_URLS_FILE);
+/** Append a processed URL to the posted-URLs archive in outputDir. */
+function addToPostedUrls(url, status, outputDir) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const out = path.join(outputDir, POSTED_URLS_FILE);
   let posted = { urls: [] };
   if (fs.existsSync(out)) {
     try {
@@ -174,16 +180,16 @@ function checkFilenameRouting(filePath) {
 }
 
 /** Detect and load saved posts from the best available input file. */
-function loadSavedPosts(dataDir) {
-  const found = findInputFile(dataDir);
+function loadSavedPosts(dataDir, outputDir) {
+  const found = findInputFile(dataDir, outputDir);
   if (!found) {
     return { urls: [], titleCache: new Map(), rowsCache: new Map(), filePath: null, fileType: null, error: 'not-found' };
   }
-  return loadFile(found.filePath, found.fileType, dataDir);
+  return loadFile(found.filePath, found.fileType, outputDir);
 }
 
 /** Load posts from a user-picked file path (csv / html / json, incl. raw *_main.json / *_secondary.json). */
-function loadFromPath(filePath, dataDir) {
+function loadFromPath(filePath, outputDir) {
   if (!fs.existsSync(filePath)) {
     return { urls: [], titleCache: new Map(), rowsCache: new Map(), filePath, fileType: null, error: 'not-found' };
   }
@@ -192,21 +198,21 @@ function loadFromPath(filePath, dataDir) {
   if (!fileType) {
     return { urls: [], titleCache: new Map(), rowsCache: new Map(), filePath, fileType: null, error: `unsupported-extension:${ext}` };
   }
-  return loadFile(filePath, fileType, dataDir);
+  return loadFile(filePath, fileType, outputDir);
 }
 
-/** Parse the given file (known type) into {urls, titleCache, rowsCache, filePath, fileType}. */
-function loadFile(filePath, fileType, dataDir) {
+/** Parse the given file (known type) into {urls, titleCache, rowsCache, filePath, fileType}. Writes the progress snapshot to outputDir. */
+function loadFile(filePath, fileType, outputDir) {
   if (fileType === 'csv') {
     const { urls: rawUrls, titleCache, rowsCache } = parseCsvExport(filePath);
     const urls = sortPostsOldestFirst(rawUrls);
-    writeJsonSnapshot(urls, dataDir);
+    writeJsonSnapshot(urls, outputDir);
     return { urls, titleCache, rowsCache, filePath, fileType };
   }
 
   if (fileType === 'html') {
     const urls = sortPostsOldestFirst(extractUrlsFromHtml(filePath));
-    writeJsonSnapshot(urls, dataDir);
+    writeJsonSnapshot(urls, outputDir);
     return { urls, titleCache: new Map(), rowsCache: new Map(), filePath, fileType };
   }
 
@@ -221,8 +227,9 @@ function loadFile(filePath, fileType, dataDir) {
   }
 }
 
-/** Write main / secondary / ignored URL lists to dated CSV files. */
+/** Write main / secondary / ignored URL lists to dated CSV files in outDir (the git-ignored output folder). */
 function writeCategorizedCsvs(categorized, titleCache, rowsCache, outDir) {
+  fs.mkdirSync(outDir, { recursive: true });
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const outputPaths = {};
 

@@ -93,6 +93,7 @@ ipcMain.handle('session:groups', () => session.getSubredditGroups());
 ipcMain.handle('session:categorize', (_e, assignments) => session.categorize(assignments));
 ipcMain.handle('session:start-browser', () => session.startBrowser());
 ipcMain.handle('session:confirm-login', () => session.confirmLogin());
+ipcMain.handle('session:switch-account', () => session.switchAccount());
 ipcMain.handle('session:check-reddit-login', () => session.checkRedditLogin());
 ipcMain.handle('session:confirm-reddit-login', () => session.confirmRedditLogin());
 ipcMain.handle('session:peek-next', () => session.peekNextPost());

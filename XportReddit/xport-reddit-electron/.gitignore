@@ -1,3 +1,5 @@
 node_modules/
 chrome_profile/
 temp_downloads/
+# Generated lists/progress/archive from each run — never the shared raw exports in XportReddit/.
+run-data/
