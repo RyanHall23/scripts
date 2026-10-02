@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 
 // Data directory = the XportReddit folder, so the app shares raw exports
 // (saveddit4reddit.csv, reddit_export.html) with the existing Python tooling.
@@ -10,9 +11,14 @@ const DATA_DIR = path.resolve(__dirname, '..', '..');
 // overwrite files tracked in the repo.
 const OUTPUT_DIR = path.join(__dirname, '..', 'run-data');
 
+// Additional folders scanned (read-only) for raw exports and *_main/_secondary/_ignored
+// batch files — e.g. browser extensions/export tools that save straight to Downloads.
+const EXTRA_INPUT_DIRS = [path.join(os.homedir(), 'Downloads')];
+
 module.exports = {
   DATA_DIR,
   OUTPUT_DIR,
+  EXTRA_INPUT_DIRS,
   UPLOAD_TIMEOUT_MS: 90_000,
   POST_RETRY_ATTEMPTS: 5,
   SAVED_POSTS_FILE: 'reddit_saved_posts.json',

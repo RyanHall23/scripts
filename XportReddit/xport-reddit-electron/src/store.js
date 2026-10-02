@@ -7,13 +7,14 @@ const { extractUrlsFromHtml, parseCsvExport, sortPostsOldestFirst, extractSubred
 /**
  * Search for a supported input file.
  * Priority: resumable progress JSON (outputDir) > dated *_main/_secondary
- *           batch files (outputDir, .csv or .json, newest date first, csv
- *           preferred on a date tie) > saveddit4reddit.csv (dataDir) >
- *           reddit_export.html (dataDir).
+ *           batch files (outputDir + extraDirs, .csv or .json, newest date
+ *           first, csv preferred on a date tie) > saveddit4reddit.csv
+ *           (dataDir + extraDirs) > reddit_export.html (dataDir + extraDirs).
  * Generated files live in outputDir (git-ignored); raw exports live in
- * dataDir (shared with the Python tooling).
+ * dataDir (shared with the Python tooling) or extraDirs (e.g. Downloads,
+ * for tools that save exports straight there).
  */
-function findInputFile(dataDir, outputDir) {
+function findInputFile(dataDir, outputDir, extraDirs = []) {
   const progressPath = path.join(outputDir, SAVED_POSTS_FILE);
   if (fs.existsSync(progressPath)) {
     try {
@@ -26,36 +27,52 @@ function findInputFile(dataDir, outputDir) {
     }
   }
 
-  const outputEntries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
+  const batchDirs = [outputDir, ...extraDirs];
   for (const suffix of ['_main', '_secondary']) {
-    const batchMatch = findNewestBatchFile(outputEntries, suffix);
-    if (batchMatch) return { filePath: path.join(outputDir, batchMatch.name), fileType: batchMatch.fileType };
+    const batchMatch = findNewestBatchAcrossDirs(batchDirs, suffix);
+    if (batchMatch) return { filePath: path.join(batchMatch.dir, batchMatch.name), fileType: batchMatch.fileType };
   }
 
+  const rawDirs = [dataDir, ...extraDirs];
   const candidates = [
     ['saveddit4reddit.csv', 'csv'],
     ['reddit_export.html', 'html'],
   ];
-  for (const [filename, ftype] of candidates) {
-    const p = path.join(dataDir, filename);
-    if (fs.existsSync(p)) return { filePath: p, fileType: ftype };
+  for (const dir of rawDirs) {
+    for (const [filename, ftype] of candidates) {
+      const p = path.join(dir, filename);
+      if (fs.existsSync(p)) return { filePath: p, fileType: ftype };
+    }
   }
 
   return null;
 }
 
-/** Find the newest `*_main.{csv,json}` / `*_secondary.{csv,json}` file, preferring csv on a date tie. */
-function findNewestBatchFile(entries, suffix) {
+/** Find the newest `*_main.{csv,json}` / `*_secondary.{csv,json}` file across several directories, preferring csv on a date tie and earlier dirs on a full tie. */
+function findNewestBatchAcrossDirs(dirs, suffix) {
   const pattern = new RegExp(`${suffix}\\.(csv|json)$`, 'i');
-  const matches = entries
-    .filter((f) => pattern.test(f))
-    .map((f) => ({ name: f, fileType: f.toLowerCase().endsWith('.json') ? 'json' : 'csv' }))
-    .sort((a, b) => {
-      if (a.name === b.name) return 0;
-      const cmp = a.name < b.name ? 1 : -1; // newest (lexicographically largest) first
-      if (cmp !== 0) return cmp;
-      return a.fileType === 'csv' ? -1 : 1;
-    });
+  const matches = [];
+
+  dirs.forEach((dir, dirIndex) => {
+    const entries = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    for (const name of entries) {
+      if (!pattern.test(name)) continue;
+      matches.push({
+        dir,
+        name,
+        dirIndex,
+        fileType: name.toLowerCase().endsWith('.json') ? 'json' : 'csv',
+        dateKey: name.replace(/\.(csv|json)$/i, ''),
+      });
+    }
+  });
+
+  matches.sort((a, b) => {
+    if (a.dateKey !== b.dateKey) return a.dateKey < b.dateKey ? 1 : -1; // newest date first
+    if (a.fileType !== b.fileType) return a.fileType === 'csv' ? -1 : 1; // csv preferred on same-date tie
+    return a.dirIndex - b.dirIndex; // earlier directory wins a full tie
+  });
+
   return matches[0] || null;
 }
 
@@ -74,18 +91,18 @@ function countUrlsInFile(filePath, fileType) {
 }
 
 /**
- * Report the newest Primary (*_main), Secondary (*_secondary) batch file in
- * outputDir, and an un-categorized raw export file in dataDir, so the UI
- * can offer explicit "Run Primary" / "Run Secondary" / "Categorize New
- * File" actions.
+ * Report the newest Primary (*_main), Secondary (*_secondary) batch file
+ * across outputDir + extraDirs, and an un-categorized raw export file
+ * across dataDir + extraDirs, so the UI can offer explicit "Run Primary" /
+ * "Run Secondary" / "Categorize New File" actions.
  */
-function getFileStatus(dataDir, outputDir) {
-  const outputEntries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
+function getFileStatus(dataDir, outputDir, extraDirs = []) {
+  const batchDirs = [outputDir, ...extraDirs];
 
   const toInfo = (suffix) => {
-    const match = findNewestBatchFile(outputEntries, suffix);
+    const match = findNewestBatchAcrossDirs(batchDirs, suffix);
     if (!match) return null;
-    const filePath = path.join(outputDir, match.name);
+    const filePath = path.join(match.dir, match.name);
     return { filePath, fileName: match.name, fileType: match.fileType, count: countUrlsInFile(filePath, match.fileType) };
   };
 
@@ -93,14 +110,18 @@ function getFileStatus(dataDir, outputDir) {
   const secondary = toInfo('_secondary');
 
   let unparsed = null;
-  for (const [filename, ftype] of [['saveddit4reddit.csv', 'csv'], ['reddit_export.html', 'html']]) {
-    const p = path.join(dataDir, filename);
-    if (fs.existsSync(p)) {
-      unparsed = { filePath: p, fileName: filename, fileType: ftype, count: countUrlsInFile(p, ftype) };
-      break;
+  for (const dir of [dataDir, ...extraDirs]) {
+    for (const [filename, ftype] of [['saveddit4reddit.csv', 'csv'], ['reddit_export.html', 'html']]) {
+      const p = path.join(dir, filename);
+      if (fs.existsSync(p)) {
+        unparsed = { filePath: p, fileName: filename, fileType: ftype, count: countUrlsInFile(p, ftype) };
+        break;
+      }
     }
+    if (unparsed) break;
   }
 
+  const outputEntries = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : [];
   const hasAnyBatchFiles = Boolean(main || secondary) || outputEntries.some((f) => /_ignored\.(csv|json)$/i.test(f));
 
   return { main, secondary, unparsed, hasAnyBatchFiles };
@@ -180,8 +201,8 @@ function checkFilenameRouting(filePath) {
 }
 
 /** Detect and load saved posts from the best available input file. */
-function loadSavedPosts(dataDir, outputDir) {
-  const found = findInputFile(dataDir, outputDir);
+function loadSavedPosts(dataDir, outputDir, extraDirs = []) {
+  const found = findInputFile(dataDir, outputDir, extraDirs);
   if (!found) {
     return { urls: [], titleCache: new Map(), rowsCache: new Map(), filePath: null, fileType: null, error: 'not-found' };
   }

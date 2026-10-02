@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  DATA_DIR, OUTPUT_DIR, TMP_DIR, POST_RETRY_ATTEMPTS,
+  DATA_DIR, OUTPUT_DIR, EXTRA_INPUT_DIRS, TMP_DIR, POST_RETRY_ATTEMPTS,
 } = require('./config');
 const store = require('./store');
 const { extractSubreddit, sortPostsOldestFirst } = require('./parsers');
@@ -21,6 +21,7 @@ class Session {
     this.browserView = browserView;
     this.dataDir = DATA_DIR;
     this.outputDir = OUTPUT_DIR;
+    this.extraDirs = EXTRA_INPUT_DIRS;
     this.titleCache = new Map();
     this.rowsCache = new Map();
     this.pendingUrls = [];
@@ -36,7 +37,7 @@ class Session {
 
   /** Load posts from the best available input file and determine routing. */
   init() {
-    return this._applyLoadResult(store.loadSavedPosts(this.dataDir, this.outputDir));
+    return this._applyLoadResult(store.loadSavedPosts(this.dataDir, this.outputDir, this.extraDirs));
   }
 
   /** Load posts from a user-picked file path (csv / html / json, incl. raw *_main.json / *_secondary.json). */
@@ -46,26 +47,26 @@ class Session {
 
   /** Report the newest Primary/Secondary batch files and any un-categorized raw export, for the load screen. */
   getFileStatus() {
-    return store.getFileStatus(this.dataDir, this.outputDir);
+    return store.getFileStatus(this.dataDir, this.outputDir, this.extraDirs);
   }
 
   /** Load and run the newest Primary (*_main) batch directly, skipping categorization. */
   initMain() {
-    const status = store.getFileStatus(this.dataDir, this.outputDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir, this.extraDirs);
     if (!status.main) return { ok: false, reason: 'no-input-file' };
     return this._applyLoadResult(store.loadFromPath(status.main.filePath, this.outputDir));
   }
 
   /** Load and run the newest Secondary (*_secondary) batch directly, skipping categorization. */
   initSecondary() {
-    const status = store.getFileStatus(this.dataDir, this.outputDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir, this.extraDirs);
     if (!status.secondary) return { ok: false, reason: 'no-input-file' };
     return this._applyLoadResult(store.loadFromPath(status.secondary.filePath, this.outputDir));
   }
 
   /** Load the raw/un-categorized export file and force the categorization step. */
   initNewFile() {
-    const status = store.getFileStatus(this.dataDir, this.outputDir);
+    const status = store.getFileStatus(this.dataDir, this.outputDir, this.extraDirs);
     if (!status.unparsed) return { ok: false, reason: 'no-input-file' };
     return this._applyLoadResult(store.loadFromPath(status.unparsed.filePath, this.outputDir));
   }

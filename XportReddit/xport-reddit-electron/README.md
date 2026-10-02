@@ -13,6 +13,11 @@ files tracked in the repo:
   `*_main.csv` / `*_secondary.csv` / `*_ignored.csv`, `reddit_saved_posts.json`
   (progress/resume file), `reddit_posted_urls.json` (archive)
 
+It also scans your **Downloads** folder (`EXTRA_INPUT_DIRS` in `src/config.js`)
+for raw exports and dated `*_main`/`*_secondary` files, for tools that save
+straight there instead of into `XportReddit/`. Add more folders to that array
+if needed. `Clear All` only ever deletes from `run-data/`, never Downloads.
+
 You can also pick any of these files manually via **Choose File…**.
 
 ## Setup
